@@ -19,8 +19,20 @@ which in a git repository would include `.git`.
 
 ## Reproducing the results
 
-The configs import suites by paths relative to the ai-cloud-validation
-checkout root, so commands run from there:
+This provider implements nothing, so every run needs `ISVCTL_DEMO_MODE=1`;
+without it each script fails with "Not implemented". `--no-upload` keeps the
+dummy results out of the ISV Lab Service.
+
+From an ai-cloud-validation checkout with the provider registry
+(`isvctl provider fetch`), fetch it by name and run it like any provider:
+
+```bash
+uv run isvctl provider fetch example
+ISVCTL_DEMO_MODE=1 uv run isvctl test run --provider example --suite vm --no-upload
+```
+
+Release 0.13.0 predates the registry: clone this repository next to the
+checkout and pass the config path instead, from the checkout root:
 
 ```bash
 git clone https://github.com/NVIDIA/ai-cloud-validation.git
@@ -32,15 +44,13 @@ git clone https://github.com/abegnoche/isvctl-provider-example.git ../isvctl-pro
 ISVCTL_DEMO_MODE=1 uv run isvctl test run --no-upload -f ../isvctl-provider-example/config/vm.yaml
 ```
 
-`--no-upload` keeps demo results out of the ISV Lab Service. Every config
-passes in demo mode; some need a capability, mirroring the suite's
-`make demo-test`:
+Some suites need a capability, mirroring the suite's `make demo-test`:
 
-| Config | Extra flags |
+| Suite | Extra flags |
 | --- | --- |
-| `bare_metal.yaml`, `control-plane.yaml`, `iam.yaml`, `vm.yaml` | none |
-| `network.yaml`, `observability.yaml`, `security.yaml`, `storage.yaml` | `--capability vm` |
-| `image-registry.yaml` | once with `--capability vm`, once with `--capability bare_metal` |
+| `bare_metal`, `control-plane`, `iam`, `vm` | none |
+| `network`, `observability`, `security` | `--capability vm` |
+| `image-registry` | once with `--capability vm`, once with `--capability bare_metal` |
 
 ## Layout
 
