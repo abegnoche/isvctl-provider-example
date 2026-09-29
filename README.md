@@ -19,20 +19,23 @@ which in a git repository would include `.git`.
 
 ## Reproducing the results
 
-This provider implements nothing, so every run needs `ISVCTL_DEMO_MODE=1`;
-without it each script fails with "Not implemented". `--no-upload` keeps the
-dummy results out of the ISV Lab Service.
+This provider implements nothing, so it only runs in demo mode
+(`ISVCTL_DEMO_MODE=1`); without it each script fails with "Not implemented".
 
 From an ai-cloud-validation checkout with the provider registry
-(`isvctl provider fetch`), fetch it by name and run it like any provider:
+(`isvctl provider fetch`), fetch it by name and run it like any provider. Its
+registry entry has `status: demo`, so isvctl turns demo mode on and never uploads
+the dummy results:
 
 ```bash
 uv run isvctl provider fetch example
-ISVCTL_DEMO_MODE=1 uv run isvctl test run --provider example --suite vm --no-upload
+uv run isvctl test run --provider example --suite vm
 ```
 
 Release 0.13.0 predates the registry: clone this repository next to the
-checkout and pass the config path instead, from the checkout root:
+checkout and pass the config path instead, from the checkout root. Here demo
+mode must be set by hand, and `--no-upload` keeps the dummy results out of the
+ISV Lab Service:
 
 ```bash
 git clone https://github.com/NVIDIA/ai-cloud-validation.git
