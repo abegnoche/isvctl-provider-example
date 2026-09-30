@@ -11,11 +11,8 @@ It shows the shape a partner repository takes: the provider's `config/` and
 `scripts/` live here, while the validation suite supplies the CLI, the suites,
 and the validation code.
 
-It was generated with `isvctl provider scaffold example` from ai-cloud-validation
-commit `1ad45f2`, and passes against release 0.13.0. The only change from the
-generated scaffold is that the `.scaffold-meta` marker was removed: it exists
-so `isvctl provider scaffold --overwrite` knows it may delete the directory,
-which in a git repository would include `.git`.
+It was generated with `isvctl provider scaffold example`, and passes against
+release 0.13.0.
 
 ## Reproducing the results
 
