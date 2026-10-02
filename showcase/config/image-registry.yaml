@@ -1,0 +1,164 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# showcase Image Registry Validation Configuration - Living Example
+#
+# Imports validations from the provider-agnostic image-registry template
+# and wires the commands to the generic template stubs in
+# scripts/image-registry/*. Those scripts ship with dummy-success values so
+# this example runs end-to-end without any real cloud / BMaaS.
+#
+# Coverage:
+#   This example exercises the pure JSON-contract validations on all
+#   steps. SSH-based checks that need a real SSH-reachable VM are
+#   excluded via `exclude.labels: [ssh]` because a dummy stub cannot
+#   stand up a real VM to SSH into.
+#
+# ACTION: Remove `exclude.labels: [ssh]` at the bottom once your
+#   stubs provision real instances with SSH access.
+#
+# Note on field names:
+#   The BMaaS install steps (install_image_bm, install_config_bm)
+#   emit both `state` AND `instance_state`: the canonical
+#   FieldExistsCheck requires `instance_state` literally, while
+#   InstanceStateCheck reads `state`. `launch_instance` only needs
+#   `state` (its FieldExistsCheck does not require `instance_state`).
+#   Mirrors the AWS reference (verify_image_installed.py).
+#
+# Usage:
+#   uv run isvctl test run -f isvctl/configs/providers/showcase/config/image-registry.yaml
+
+import:
+  - isvctl/configs/suites/image-registry.yaml
+
+version: "1.0"
+
+commands:
+  image_registry:
+    phases: ["setup", "test", "teardown"]
+    steps:
+      - name: upload_image
+        phase: setup
+        command: "python ../scripts/image-registry/upload_image.py"
+        args:
+          - "--image-url"
+          - "{{image_url}}"
+          - "--image-format"
+          - "{{image_format}}"
+          - "--region"
+          - "{{region}}"
+        timeout: 60
+
+      - name: crud_image
+        phase: test
+        command: "python ../scripts/image-registry/crud_image.py"
+        args:
+          - "--image-id"
+          - "{{steps.upload_image.image_id}}"
+          - "--region"
+          - "{{region}}"
+        timeout: 60
+
+      - name: launch_instance
+        phase: test
+        command: "python ../scripts/image-registry/launch_instance.py"
+        args:
+          - "--image-id"
+          - "{{steps.upload_image.image_id}}"
+          - "--instance-type"
+          - "{{instance_type}}"
+          - "--region"
+          - "{{region}}"
+        timeout: 60
+
+      - name: crud_install_config
+        phase: test
+        command: "python ../scripts/image-registry/crud_install_config.py"
+        args: ["--region", "{{region}}"]
+        timeout: 60
+
+      - name: install_image_bm
+        phase: test
+        command: "python ../scripts/image-registry/install_image_bm.py"
+        args:
+          - "--image-id"
+          - "{{steps.upload_image.image_id}}"
+          - "--region"
+          - "{{region}}"
+        timeout: 60
+
+      - name: install_config_bm
+        phase: test
+        command: "python ../scripts/image-registry/install_config_bm.py"
+        args:
+          - "--config-id"
+          - "{{steps.crud_install_config.config_id}}"
+          - "--region"
+          - "{{region}}"
+        timeout: 60
+
+      # Teardown is split by owner so each half can be gated independently.
+      # This half cleans up what launch_instance created, so it carries the
+      # same `requires: [vm]` gate and is skipped whole in other contexts.
+      # Declared first: terminate the instance before deregistering the image
+      # it was launched from.
+      - name: teardown_instance
+        phase: teardown
+        command: "python ../scripts/image-registry/teardown.py"
+        requires: [vm]
+        args:
+          - "--instance-id"
+          - "{{steps.launch_instance.instance_id}}"
+          - "--key-name"
+          - "{{steps.launch_instance.key_name}}"
+          - "--security-group-id"
+          - "{{steps.launch_instance.security_group_id}}"
+          - "--instance-profile"
+          - "{{steps.launch_instance.instance_profile}}"
+          - "--region"
+          - "{{region}}"
+          - "{{teardown_flag}}"
+        timeout: 60
+
+      # This half cleans up what the core upload_image step created, so it is
+      # ungated and runs in every capability context.
+      - name: teardown_image
+        phase: teardown
+        command: "python ../scripts/image-registry/teardown.py"
+        args:
+          - "--image-id"
+          - "{{steps.upload_image.image_id}}"
+          - "--disk-ids"
+          - "{{steps.upload_image.disk_ids | join(',')}}"
+          - "--bucket-name"
+          - "{{steps.upload_image.storage_bucket}}"
+          - "--region"
+          - "{{region}}"
+          - "{{teardown_flag}}"
+        timeout: 60
+
+tests:
+  cluster_name: "showcase-image-registry-validation"
+  description: "showcase image registry lifecycle validation (generic stubs, dummy overrides)"
+
+  settings:
+    region: "showcase-region-1"
+    instance_type: "showcase.gpu.1x"
+
+  # Skip SSH-based vm_ssh check (VmFromCustomImageReadyCheck on
+  # launch_instance) - would try to SSH into the dummy public_ip.
+  # Real ISVs remove this exclusion as their stubs come online.
+  exclude:
+    labels: ["ssh"]

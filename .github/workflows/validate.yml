@@ -34,20 +34,22 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   demo:
-    name: ${{ matrix.config }}${{ matrix.capability && format(' --capability {0}', matrix.capability) || '' }}
+    name: ${{ matrix.provider }} ${{ matrix.target.config }}${{ matrix.target.capability && format(' --capability {0}', matrix.target.capability) || '' }}
     needs: release
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
-      # Mirrors `make demo-test` in ai-cloud-validation. storage is left out: its
-      # config needs config/storage-provider-manifest.yaml, which this repo does not ship.
+      # Mirrors `make demo-test` in ai-cloud-validation, for each provider in this
+      # repository. storage is left out: its config needs
+      # config/storage-provider-manifest.yaml, which these providers do not ship.
       matrix:
-        include:
-          - config: bare_metal
-          - config: control-plane
-          - config: iam
-          - config: vm
+        provider: [example, showcase]
+        target:
+          - {config: bare_metal}
+          - {config: control-plane}
+          - {config: iam}
+          - {config: vm}
           - {config: image-registry, capability: vm}
           - {config: image-registry, capability: bare_metal}
           - {config: network, capability: vm}
@@ -79,7 +81,8 @@ jobs:
         working-directory: validation
         env:
           ISVCTL_DEMO_MODE: "1"
-          CONFIG: ${{ matrix.config }}
-          CAPABILITY: ${{ matrix.capability }}
+          PROVIDER: ${{ matrix.provider }}
+          CONFIG: ${{ matrix.target.config }}
+          CAPABILITY: ${{ matrix.target.capability }}
         run: |
-          uv run isvctl test run --no-upload -f "../provider/config/$CONFIG.yaml" ${CAPABILITY:+--capability "$CAPABILITY"}
+          uv run isvctl test run --no-upload -f "../provider/$PROVIDER/config/$CONFIG.yaml" ${CAPABILITY:+--capability "$CAPABILITY"}

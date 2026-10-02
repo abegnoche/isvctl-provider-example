@@ -1,0 +1,122 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# showcase Kubernetes Platform Suite - Living Example
+#
+# This is the obligation attached to declaring the `kubernetes` capability.
+# It imports the provider-agnostic Kubernetes validation contract and wires
+# the lifecycle to the generic scripts in scripts/k8s/*.
+#
+# Usage:
+#   uv run isvctl test run --provider showcase --suite kubernetes
+#
+# Unlike the other showcase examples this one talks to a REAL cluster: the
+# validations run kubectl directly, so there is nothing for a dummy-success
+# stub to return. That is why it is not part of `make demo-test`.
+#
+# ACTION: point KUBECTL at your cluster (or make `kubectl` resolve to it),
+#   then replace scripts/k8s/setup.sh with your own provisioning if you want
+#   isvctl to create the cluster rather than reuse an existing one.
+#
+# Environment Variables:
+#   - KUBECTL: kubectl-compatible CLI prefix (defaults to kubectl, then microk8s kubectl)
+#   - NGC_API_KEY: NGC API key for NIM workloads
+
+import: isvctl/configs/suites/k8s.yaml
+
+version: "1.0"
+
+# Steps are overridden (not inherited) so the script paths resolve from this
+# provider's config directory. Lists are replaced wholesale on merge.
+commands:
+  kubernetes:
+    phases: ["setup", "test", "teardown"]
+    steps:
+      - name: setup
+        phase: setup
+        command: "../scripts/k8s/setup.sh"
+        timeout: 120
+
+      - name: teardown
+        phase: teardown
+        command: "../scripts/k8s/teardown.sh"
+        timeout: 30
+
+      # Control-plane size pinning (K8S27-01). Drop this step if your managed
+      # offering exposes no control-plane sizing knob - K8sControlPlaneSizePinnedCheck
+      # then skips instead of reporting a pin nobody can make.
+      - name: pin_control_plane
+        phase: setup
+        command: "python3 ../scripts/k8s/pin_control_plane.py"
+        args:
+          - "--instance-count={{control_plane_instance_count}}"
+        output_schema: control_plane_size
+        timeout: 900
+
+      # Upstream reference for K8S02 (shared, not provider-specific).
+      # Best-effort: an unreachable index skips the checks rather than
+      # stopping setup. Pass `--source=file:///path/to/index.json` under args
+      # to read a mirrored copy of the index when air-gapped.
+      - name: fetch_upstream_k8s_versions
+        phase: setup
+        continue_on_failure: true
+        command: "python3 isvctl/configs/providers/shared/k8s/fetch_upstream_versions.py"
+        output_schema: k8s_upstream_versions
+        timeout: 60
+
+      # Offered versions (K8S02-01) and patching configuration (K8S02-02).
+      # Each feeds one check, so a failed read is that check's finding.
+      - name: list_k8s_versions
+        phase: setup
+        continue_on_failure: true
+        command: "python3 ../scripts/k8s/list_k8s_versions.py"
+        output_schema: k8s_offered_versions
+        timeout: 120
+
+      - name: describe_control_plane_patching
+        phase: setup
+        continue_on_failure: true
+        command: "python3 ../scripts/k8s/describe_control_plane_patching.py"
+        output_schema: k8s_control_plane_patching
+        timeout: 120
+
+      # Break-fix actions (BFX01). Demo stubs until real cluster APIs are wired.
+      - name: reset_gpus
+        phase: test
+        continue_on_failure: true
+        command: "python ../scripts/breakfix/reset_gpus.py"
+        args:
+          - "--region"
+          - "{{region}}"
+          - "--machine-id"
+          - "{{machine_id}}"
+        timeout: 600
+
+      - name: cordon_node
+        phase: test
+        command: "python3 isvctl/configs/providers/shared/breakfix/cordon_node.py"
+        args:
+          - "--node={{breakfix_node}}"
+        timeout: 1200
+
+tests:
+  description: "showcase Kubernetes platform suite (real cluster required)"
+  settings:
+    region: ""
+    machine_id: ""
+    breakfix_node: "{{env.ISVTEST_BREAKFIX_NODE | default('', true)}}"
+    # Control-plane instance count to pin (K8S27-01). Set this to the size that
+    # carries the load limit you are certifying for.
+    control_plane_instance_count: 3
